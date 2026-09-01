@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Html5QrcodeScanner } from 'html5-qrcode';
 
 const initialProducts = [
   { id: 1, barcode: '8991001', name: 'Laptop Dell XPS 13', category: 'Elektronik', price: 12000000, weight: '1.2 kg' },
-  { id: 2, barcode: '8991002', name: 'Mouse Logitech MX Master', category: 'Elektronik', price: 750000, weight: '150 g' },
-  { id: 3, barcode: '8991003', name: 'Keyboard Mechanical RGB', category: 'Elektronik', price: 1200000, weight: '800 g' },
-  { id: 4, barcode: '8991004', name: 'Monitor LG 27" 4K', category: 'Elektronik', price: 3500000, weight: '4.5 kg' }
+  { id: 2, barcode: '8991002', name: 'Mouse Logitech MX Master', category: 'Elektronik', price: 750000, weight: '150 g' }
 ];
 
 export default function App() {
@@ -15,24 +14,52 @@ export default function App() {
   const [salesHistory, setSalesHistory] = useState([]);
   const [activeTab, setActiveTab] = useState('kasir'); // 'kasir' atau 'laporan'
   
-  // State untuk Modal / Form Tambah Produk Baru jika Barcode tidak ditemukan
+  // State untuk Modal / Form Tambah Produk Baru
   const [showAddModal, setShowAddModal] = useState(false);
   const [newBarcode, setNewBarcode] = useState('');
   const [newName, setNewName] = useState('');
   const [newCategory, setNewCategory] = useState('');
-  const [newPrice, setNewPrice] = useState('');
+  const [newPrice, setNewPrice] = useState(''); // Kosong secara default agar bisa disesuaikan
   const [newWeight, setNewWeight] = useState('');
 
-  // State untuk Scanner Kamera
-  const [isScanning, setIsScanning] = useState(false);
-  const scannerRef = useRef(null);
+  // State untuk Kamera Scanner
+  const [scanningActive, setScanningActive] = useState(false);
+  const scannerInstanceRef = useRef(null);
 
-  // Fungsi Tambah ke Keranjang berdasarkan Barcode atau Nama
-  const handleScanOrSearch = (codeToSearch) => {
-    const query = (codeToSearch || barcodeInput).trim();
+  useEffect(() => {
+    if (scanningActive) {
+      const scanner = new Html5QrcodeScanner(
+        "reader",
+        { fps: 10, qrbox: { width: 250, height: 150 } },
+        false
+      );
+      scannerInstanceRef.current = scanner;
+
+      scanner.render(
+        (decodedText) => {
+          // Sukses scan barcode dari kamera HP
+          scanner.clear().catch(error => console.error("Failed to clear scanner. ", error));
+          setScanningActive(false);
+          handleDetectedCode(decodedText);
+        },
+        (error) => {
+          // Abaikan error frame kamera kosong
+        }
+      );
+    }
+
+    return () => {
+      if (scannerInstanceRef.current) {
+        scannerInstanceRef.current.clear().catch(() => {});
+      }
+    };
+  }, [scanningActive]);
+
+  // Fungsi Cek Barcode atau Nama (Mendukung Manual & Hasil Scan Kamera)
+  const handleDetectedCode = (codeOrName) => {
+    const query = (codeOrName || barcodeInput).trim();
     if (!query) return;
 
-    // Cari produk berdasarkan barcode atau nama
     const found = products.find(
       p => p.barcode === query || p.name.toLowerCase().includes(query.toLowerCase())
     );
@@ -41,10 +68,20 @@ export default function App() {
       addToCart(found);
       setBarcodeInput('');
     } else {
-      // Jika barcode tidak ditemukan, tawarkan untuk input produk baru secara manual!
-      setNewBarcode(query.length > 3 && !isNaN(query) ? query : '');
-      setNewName(isNaN(query) ? query : '');
+      // Jika tidak ditemukan, buka form otomatis
+      // Jika berupa angka/barcode, masukkan ke kolom barcode. Jika teks/nama, masukkan ke nama.
+      if (!isNaN(query) && query.length > 3) {
+        setNewBarcode(query);
+        setNewName('');
+      } else {
+        setNewBarcode('');
+        setNewName(query);
+      }
+      setNewCategory('');
+      setNewPrice(''); // Dikosongkan mutlak agar siap disesuaikan
+      setNewWeight('1 pcs');
       setShowAddModal(true);
+      setBarcodeInput('');
     }
   };
 
@@ -77,7 +114,7 @@ export default function App() {
   };
 
   const subtotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
-  const tax = subtotal * 0.11; // PPN 11%
+  const tax = subtotal * 0.11;
   const grandTotal = subtotal + tax;
   const cashNumber = parseFloat(cashGiven) || 0;
   const change = cashNumber - grandTotal;
@@ -106,17 +143,16 @@ export default function App() {
     alert('Transaksi berhasil disimpan!');
   };
 
-  // Simpan Produk Baru dari Hasil Scan / Manual
   const handleSaveNewProduct = (e) => {
     e.preventDefault();
-    if (!newBarcode || !newName || !newPrice) {
-      alert('Barcode, Nama, dan Harga wajib diisi!');
+    if (!newName || !newPrice) {
+      alert('Nama Barang dan Harga Wajib diisi!');
       return;
     }
 
     const newProd = {
       id: Date.now(),
-      barcode: newBarcode,
+      barcode: newBarcode || `MANUAL-${Date.now().toString().slice(-5)}`,
       name: newName,
       category: newCategory || 'Umum',
       price: parseFloat(newPrice) || 0,
@@ -133,30 +169,28 @@ export default function App() {
     setNewCategory('');
     setNewPrice('');
     setNewWeight('');
-    setBarcodeInput('');
   };
 
   return (
     <div className="min-h-screen bg-slate-100 font-sans pb-10">
-      {/* Header */}
       <header className="bg-blue-600 text-white p-4 shadow-md">
         <div className="max-w-4xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-3">
           <div>
-            <h1 className="text-xl font-bold">POS System - Point of Sale</h1>
-            <p className="text-xs text-blue-100">Kasir Pintar Terintegrasi Barcode & Input Produk</p>
+            <h1 className="text-xl font-bold">POS System - Gudang & Kasir</h1>
+            <p className="text-xs text-blue-100">Scan Barcode Kamera & Input Manual Fleksibel</p>
           </div>
           <div className="flex gap-2">
             <button
               onClick={() => setActiveTab('kasir')}
-              className={`px-4 py-2 rounded-lg font-medium text-sm transition ${activeTab === 'kasir' ? 'bg-white text-blue-600 shadow' : 'bg-blue-700 text-white hover:bg-blue-500'}`}
+              className={`px-4 py-2 rounded-lg font-medium text-sm transition ${activeTab === 'kasir' ? 'bg-white text-blue-600 shadow' : 'bg-blue-700 text-white'}`}
             >
-              Kasir Utama
+              Kasir & Scan Truk
             </button>
             <button
               onClick={() => setActiveTab('laporan')}
-              className={`px-4 py-2 rounded-lg font-medium text-sm transition ${activeTab === 'laporan' ? 'bg-white text-blue-600 shadow' : 'bg-blue-700 text-white hover:bg-blue-500'}`}
+              className={`px-4 py-2 rounded-lg font-medium text-sm transition ${activeTab === 'laporan' ? 'bg-white text-blue-600 shadow' : 'bg-blue-700 text-white'}`}
             >
-              Laporan Harian ({salesHistory.length})
+              Laporan ({salesHistory.length})
             </button>
           </div>
         </div>
@@ -165,43 +199,56 @@ export default function App() {
       <main className="max-w-4xl mx-auto p-4">
         {activeTab === 'kasir' ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Kolom Kiri & Tengah: Pencarian & Katalog */}
             <div className="md:col-span-2 space-y-4">
-              {/* Input Barcode & Tombol Scan */}
-              <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Scan Barcode / Ketik Nama Barang..."
-                  value={barcodeInput}
-                  onChange={(e) => setBarcodeInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleScanOrSearch()}
-                  className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+              {/* Bagian Input & Tombol Kamera Scanner HP */}
+              <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-3">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Scan Barcode / Ketik Nama Barang (Manual)..."
+                    value={barcodeInput}
+                    onChange={(e) => setBarcodeInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleDetectedCode()}
+                    className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <button
+                    onClick={() => handleDetectedCode()}
+                    className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition"
+                  >
+                    Cari / Input
+                  </button>
+                </div>
+
                 <button
-                  onClick={() => handleScanOrSearch()}
-                  className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition"
+                  onClick={() => setScanningActive(!scanningActive)}
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition shadow-sm"
                 >
-                  Cari / Tambah
+                  <span>📷 {scanningActive ? 'Tutup Kamera Scanner' : 'Buka Scanner Kamera HP (Bongkar Truk)'}</span>
                 </button>
+
+                {scanningActive && (
+                  <div className="p-2 border border-emerald-300 rounded-lg bg-emerald-50">
+                    <div id="reader" className="w-full"></div>
+                    <p className="text-[11px] text-center text-emerald-700 mt-2 font-medium">Arahkan kamera ke barcode kemasan barang...</p>
+                  </div>
+                )}
               </div>
 
               {/* Katalog Produk */}
               <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-                <h2 className="font-semibold text-slate-700 mb-3 text-sm">Katalog Produk ({products.length})</h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[450px] overflow-y-auto pr-1">
+                <h2 className="font-semibold text-slate-700 mb-3 text-sm">Katalog Produk Terdaftar ({products.length})</h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[350px] overflow-y-auto pr-1">
                   {products.map(p => (
-                    <div key={p.id} className="border border-slate-200 rounded-lg p-3 flex flex-col justify-between hover:border-blue-400 transition bg-slate-50">
+                    <div key={p.id} className="border border-slate-200 rounded-lg p-3 flex flex-col justify-between bg-slate-50">
                       <div>
                         <div className="flex justify-between items-start">
                           <h3 className="font-bold text-slate-800 text-sm">{p.name}</h3>
                           <span className="text-[10px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-medium">{p.category}</span>
                         </div>
-                        <p className="text-xs text-slate-500 mt-1">Barcode: {p.barcode} | {p.weight}</p>
+                        <p className="text-xs text-slate-500 mt-1">Barcode: {p.barcode}</p>
                       </div>
                       <div className="mt-3 flex items-center justify-between">
-                        <span className="font-bold text-blue-600 text-sm">
-                          Rp {p.price.toLocaleString('id-ID')}
-                        </span>
+                        <span className="font-bold text-blue-600 text-sm">Rp {p.price.toLocaleString('id-ID')}</span>
                         <button
                           onClick={() => addToCart(p)}
                           className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-1.5 rounded font-medium transition"
@@ -215,14 +262,14 @@ export default function App() {
               </div>
             </div>
 
-            {/* Kolom Kanan: Keranjang Belanja */}
+            {/* Keranjang Belanja */}
             <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between">
               <div>
-                <h2 className="font-semibold text-slate-700 mb-3 text-sm border-b pb-2">Keranjang Belanja</h2>
+                <h2 className="font-semibold text-slate-700 mb-3 text-sm border-b pb-2">Keranjang Kasir</h2>
                 {cart.length === 0 ? (
-                  <p className="text-slate-400 text-xs text-center py-10">Keranjang masih kosong</p>
+                  <p className="text-slate-400 text-xs text-center py-10">Keranjang kosong</p>
                 ) : (
-                  <div className="space-y-3 max-h-[250px] overflow-y-auto pr-1">
+                  <div className="space-y-3 max-h-[220px] overflow-y-auto pr-1">
                     {cart.map(item => (
                       <div key={item.id} className="flex justify-between items-center text-xs border-b pb-2">
                         <div className="flex-1 pr-2">
@@ -241,55 +288,42 @@ export default function App() {
                 )}
               </div>
 
-              {/* Rincian Pembayaran */}
               <div className="mt-4 pt-3 border-t text-xs space-y-1.5">
-                <div className="flex justify-between text-slate-600">
-                  <span>Subtotal</span>
-                  <span>Rp {subtotal.toLocaleString('id-ID')}</span>
-                </div>
-                <div className="flex justify-between text-slate-600">
-                  <span>PPN (11%)</span>
-                  <span>Rp {tax.toLocaleString('id-ID')}</span>
-                </div>
-                <div className="flex justify-between font-bold text-slate-800 text-sm pt-1 border-t">
+                <div className="flex justify-between font-bold text-slate-800 text-sm">
                   <span>Total</span>
                   <span className="text-blue-600">Rp {grandTotal.toLocaleString('id-ID')}</span>
                 </div>
-
-                <div className="mt-3">
+                <div className="mt-2">
                   <label className="block text-[11px] text-slate-600 mb-1">Uang Tunai (Rp)</label>
                   <input
                     type="number"
-                    placeholder="Masukkan nominal uang"
+                    placeholder="Nominal bayar"
                     value={cashGiven}
                     onChange={(e) => setCashGiven(e.target.value)}
                     className="w-full border rounded p-1.5 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
                   />
                 </div>
-
                 {cashNumber > 0 && (
                   <div className={`flex justify-between font-bold text-xs pt-1 ${change >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
                     <span>Kembalian</span>
-                    <span>Rp {change >= 0 ? change.toLocaleString('id-ID') : 'Uang Kurang'}</span>
+                    <span>Rp {change >= 0 ? change.toLocaleString('id-ID') : 'Kurang'}</span>
                   </div>
                 )}
-
                 <button
                   onClick={handleCheckout}
                   disabled={cart.length === 0 || cashNumber < grandTotal}
-                  className="w-full mt-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white py-2 rounded-lg font-medium text-xs transition"
+                  className="w-full mt-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white py-2 rounded-lg font-medium text-xs transition"
                 >
-                  Bayar & Selesaikan Transaksi
+                  Selesaikan Transaksi
                 </button>
               </div>
             </div>
           </div>
         ) : (
-          /* Tab Laporan Harian */
           <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
             <h2 className="font-semibold text-slate-700 mb-4 text-sm">Laporan Transaksi Harian</h2>
             {salesHistory.length === 0 ? (
-              <p className="text-slate-400 text-xs text-center py-10">Belum ada transaksi hari ini.</p>
+              <p className="text-slate-400 text-xs text-center py-10">Belum ada transaksi.</p>
             ) : (
               <div className="space-y-4 max-h-[500px] overflow-y-auto">
                 {salesHistory.map(trx => (
@@ -308,7 +342,6 @@ export default function App() {
                     </ul>
                     <div className="pt-2 border-t flex justify-between font-bold text-slate-800">
                       <span>Total: Rp {trx.grandTotal.toLocaleString('id-ID')}</span>
-                      <span className="text-emerald-600">Kembali: Rp {trx.change.toLocaleString('id-ID')}</span>
                     </div>
                   </div>
                 ))}
@@ -318,25 +351,24 @@ export default function App() {
         )}
       </main>
 
-      {/* Modal Input Produk Baru jika Barcode Tidak Ditemukan */}
+      {/* Modal Form Otomatis Input Barang Baru / Penyesuaian Harga */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-xl space-y-4">
-            <h3 className="font-bold text-slate-800 text-base">Barcode Belum Terdaftar</h3>
+            <h3 className="font-bold text-slate-800 text-base">📦 Barang Baru Terdeteksi (Input Otomatis)</h3>
             <p className="text-xs text-slate-500">
-              Kode atau nama yang Anda masukkan belum ada di katalog. Silakan lengkapi data produk dan kategorinya di bawah ini untuk menyimpannya secara permanen.
+              Barcode dari kemasan berhasil dibaca. Silakan lengkapi Nama, Kategori, dan sesuaikan Harga jualnya.
             </p>
             
             <form onSubmit={handleSaveNewProduct} className="space-y-3 text-xs">
               <div>
-                <label className="block font-medium text-slate-700 mb-1">Barcode / Kode Rahasia</label>
+                <label className="block font-medium text-slate-700 mb-1">Barcode / Kode Kemasan</label>
                 <input
                   type="text"
                   required
                   value={newBarcode}
                   onChange={(e) => setNewBarcode(e.target.value)}
-                  placeholder="Contoh: 8991005"
-                  className="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  className="w-full border rounded p-2 bg-slate-100 font-bold text-blue-600"
                 />
               </div>
 
@@ -347,7 +379,7 @@ export default function App() {
                   required
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
-                  placeholder="Contoh: Flashdisk 32GB"
+                  placeholder="Ketik nama barang..."
                   className="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                 />
               </div>
@@ -359,30 +391,30 @@ export default function App() {
                   required
                   value={newCategory}
                   onChange={(e) => setNewCategory(e.target.value)}
-                  placeholder="Contoh: Aksesoris / Elektronik"
+                  placeholder="Contoh: Rokok / Makanan / Minuman"
                   className="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block font-medium text-slate-700 mb-1">Harga Jual (Rp)</label>
+                  <label className="block font-medium text-slate-700 mb-1">Harga Jual (Rp) - Wajib Diisi</label>
                   <input
                     type="number"
                     required
                     value={newPrice}
                     onChange={(e) => setNewPrice(e.target.value)}
-                    placeholder="Contoh: 75000"
-                    className="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    placeholder="Masukkan harga..."
+                    className="w-full border rounded p-2 bg-yellow-50 border-yellow-300 focus:ring-2 focus:ring-blue-500 focus:outline-none font-bold"
                   />
                 </div>
                 <div>
-                  <label className="block font-medium text-slate-700 mb-1">Berat / Satuan</label>
+                  <label className="block font-medium text-slate-700 mb-1">Satuan / Berat</label>
                   <input
                     type="text"
                     value={newWeight}
                     onChange={(e) => setNewWeight(e.target.value)}
-                    placeholder="Contoh: 50 g"
+                    placeholder="Contoh: 1 pcs"
                     className="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                   />
                 </div>
@@ -392,13 +424,13 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="flex-1 bg-slate-200 text-slate-700 py-2 rounded font-medium hover:bg-slate-300 transition"
+                  className="flex-1 bg-slate-200 text-slate-700 py-2 rounded font-medium hover:bg-slate-300"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 bg-blue-600 text-white py-2 rounded font-medium hover:bg-blue-700 transition"
+                  className="flex-1 bg-blue-600 text-white py-2 rounded font-medium hover:bg-blue-700 shadow"
                 >
                   Simpan & Masukkan
                 </button>
@@ -410,4 +442,3 @@ export default function App() {
     </div>
   );
 }
-  
