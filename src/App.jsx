@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 
 const initialProducts = [
-  { id: 1, barcode: '8991001', name: 'Laptop Dell XPS 13', category: 'Elektronik', price: 12000000, costPrice: 10000000, weight: '1.2 kg' },
-  { id: 2, barcode: '8991002', name: 'Mouse Logitech MX Master', category: 'Elektronik', price: 750000, costPrice: 600000, weight: '150 g' },
-  { id: 3, barcode: '8991003', name: 'Keyboard Mechanical RGB', category: 'Elektronik', price: 1200000, costPrice: 950000, weight: '800 g' }
+  { id: 1, barcode: '8991001', name: 'Laptop Dell XPS 13', category: 'Elektronik', price: 12000000, costPrice: 10000000, stock: 10 },
+  { id: 2, barcode: '8991002', name: 'Mouse Logitech MX Master', category: 'Elektronik', price: 750000, costPrice: 600000, stock: 25 },
+  { id: 3, barcode: '8991003', name: 'Keyboard Mechanical RGB', category: 'Elektronik', price: 1200000, costPrice: 950000, stock: 15 }
 ];
 
 export default function App() {
@@ -20,6 +20,9 @@ export default function App() {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [licenseKey, setLicenseKey] = useState('');
   
+  // State Struk Terakhir untuk Dicetak
+  const [latestTransaction, setLatestTransaction] = useState(null);
+  
   // State untuk Scanner Kamera HP
   const [isScanning, setIsScanning] = useState(false);
 
@@ -30,9 +33,8 @@ export default function App() {
   const [newCategory, setNewCategory] = useState('');
   const [newPrice, setNewPrice] = useState('');
   const [newCostPrice, setNewCostPrice] = useState('');
-  const [newWeight, setNewWeight] = useState('');
+  const [newStock, setNewStock] = useState('');
 
-  // Jalankan Html5QrcodeScanner khusus untuk pengguna PRO
   useEffect(() => {
     let scanner = null;
     if (isScanning && isPro) {
@@ -68,6 +70,10 @@ export default function App() {
     );
 
     if (found) {
+      if (found.stock <= 0) {
+        alert('Stok barang ini sudah habis di gudang!');
+        return;
+      }
       addToCart(found);
       setBarcodeInput('');
     } else {
@@ -81,7 +87,7 @@ export default function App() {
       setNewCategory('Umum');
       setNewPrice('');
       setNewCostPrice('');
-      setNewWeight('1 pcs');
+      setNewStock('10');
       setShowAddModal(true);
       setBarcodeInput('');
     }
@@ -90,6 +96,13 @@ export default function App() {
   const addToCart = (product) => {
     setCart(prevCart => {
       const existing = prevCart.find(item => item.id === product.id);
+      const currentQty = existing ? existing.qty : 0;
+      
+      if (currentQty + 1 > product.stock) {
+        alert('Jumlah melebihi stok gudang yang tersedia!');
+        return prevCart;
+      }
+
       if (existing) {
         return prevCart.map(item =>
           item.id === product.id ? { ...item, qty: item.qty + 1 } : item
@@ -103,7 +116,12 @@ export default function App() {
     setCart(prevCart =>
       prevCart.map(item => {
         if (item.id === id) {
+          const productRef = products.find(p => p.id === id);
           const newQty = item.qty + delta;
+          if (newQty > productRef.stock) {
+            alert('Stok gudang tidak mencukupi!');
+            return item;
+          }
           return newQty > 0 ? { ...item, qty: newQty } : null;
         }
         return item;
@@ -116,8 +134,6 @@ export default function App() {
   };
 
   const subtotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
-  const totalCost = cart.reduce((sum, item) => sum + ((item.costPrice || (item.price * 0.8)) * item.qty), 0);
-  const profitEst = subtotal - totalCost;
   const tax = subtotal * 0.11;
   const grandTotal = subtotal + tax;
   const cashNumber = parseFloat(cashGiven) || 0;
@@ -129,6 +145,17 @@ export default function App() {
       alert('Uang tunai kurang dari total belanja!');
       return;
     }
+
+    // Kurangi stok produk secara otomatis
+    setProducts(prevProducts =>
+      prevProducts.map(p => {
+        const cartItem = cart.find(c => c.id === p.id);
+        if (cartItem) {
+          return { ...p, stock: p.stock - cartItem.qty };
+        }
+        return p;
+      })
+    );
 
     const transactionProfit = cart.reduce((sum, item) => {
       const c = item.costPrice || (item.price * 0.8);
@@ -148,9 +175,17 @@ export default function App() {
     };
 
     setSalesHistory([newTransaction, ...salesHistory]);
+    setLatestTransaction(newTransaction);
     setCart([]);
     setCashGiven('');
-    alert('Transaksi berhasil disimpan & dicatat!');
+    alert('Transaksi berhasil! Struk siap dicetak.');
+  };
+
+  const handlePrintReceipt = (trx) => {
+    setLatestTransaction(trx);
+    setTimeout(() => {
+      window.print();
+    }, 300);
   };
 
   const handleSaveNewProduct = (e) => {
@@ -170,7 +205,7 @@ export default function App() {
       category: newCategory || 'Umum',
       price: priceNum,
       costPrice: costNum,
-      weight: newWeight || '1 pcs'
+      stock: parseInt(newStock) || 10
     };
 
     setProducts([newProd, ...products]);
@@ -182,25 +217,25 @@ export default function App() {
     setNewCategory('');
     setNewPrice('');
     setNewCostPrice('');
-    setNewWeight('');
+    setNewStock('');
   };
 
   const handleActivatePro = (e) => {
     e.preventDefault();
-    // Simulasi kode aktivasi rahasia untuk demo (misal: "PRO-UMKM-2026")
     if (licenseKey.trim() === 'PRO-UMKM-2026' || licenseKey.trim() === '12345') {
       setIsPro(true);
       setShowUpgradeModal(false);
       setLicenseKey('');
-      alert('Selamat! Akun toko Anda sekarang beralih ke Versi PRO (Fitur Scan Kamera & Laporan Keuntungan Aktif).');
+      alert('Selamat! Toko Anda sekarang terhubung ke Versi PRO (Fitur Cetak Struk Bluetooth & Scanner Aktif).');
     } else {
-      alert('Kode Lisensi salah! Gunakan kode uji coba: PRO-UMKM-2026');
+      alert('Kode Lisensi salah! Gunakan kode demo: PRO-UMKM-2026');
     }
   };
 
   return (
     <div className="min-h-screen bg-slate-100 font-sans pb-10">
-      <header className="bg-blue-600 text-white p-4 shadow-md">
+      {/* Header Aplikasi (Tersembunyi saat Cetak Struk) */}
+      <header className="bg-blue-600 text-white p-4 shadow-md print:hidden">
         <div className="max-w-4xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-3">
           <div>
             <div className="flex items-center gap-2">
@@ -209,7 +244,7 @@ export default function App() {
                 {isPro ? '⭐ PRO VERSION' : '🔒 FREE VERSION'}
               </span>
             </div>
-            <p className="text-xs text-blue-100">Solusi Cepat Penjualan & Gudang Toko</p>
+            <p className="text-xs text-blue-100">Solusi Kasir, Stok Gudang & Cetak Struk Bluetooth</p>
           </div>
           <div className="flex gap-2 items-center">
             <button
@@ -236,7 +271,41 @@ export default function App() {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto p-4">
+      {/* Area Cetak Struk Tersembunyi Khusus Printer Thermal */}
+      <div className="hidden print:block p-4 bg-white text-black text-xs font-mono w-[58mm] mx-auto">
+        {latestTransaction && (
+          <div className="space-y-1 text-center">
+            <h2 className="font-bold text-sm">TOKO KELONTONG UMKM</h2>
+            <p className="text-[10px]">Jl. Niaga Raya No. 10, Indonesia</p>
+            <div className="border-b border-dashed my-1"></div>
+            <div className="text-left text-[10px]">
+              <p>ID: #{latestTransaction.id}</p>
+              <p>Tgl: {latestTransaction.date}</p>
+            </div>
+            <div className="border-b border-dashed my-1"></div>
+            <div className="text-left space-y-1">
+              {latestTransaction.items.map((it, idx) => (
+                <div key={idx} className="flex justify-between">
+                  <span>{it.name} (x{it.qty})</span>
+                  <span>Rp {(it.price * it.qty).toLocaleString('id-ID')}</span>
+                </div>
+              ))}
+            </div>
+            <div className="border-b border-dashed my-1"></div>
+            <div className="text-right space-y-0.5 text-[10px]">
+              <div className="flex justify-between"><span>Subtotal:</span><span>Rp {latestTransaction.subtotal.toLocaleString('id-ID')}</span></div>
+              <div className="flex justify-between"><span>Pajak (11%):</span><span>Rp {latestTransaction.tax.toLocaleString('id-ID')}</span></div>
+              <div className="flex justify-between font-bold text-xs pt-1 border-t"><span>TOTAL:</span><span>Rp {latestTransaction.grandTotal.toLocaleString('id-ID')}</span></div>
+              <div className="flex justify-between"><span>Tunai:</span><span>Rp {latestTransaction.cash.toLocaleString('id-ID')}</span></div>
+              <div className="flex justify-between"><span>Kembali:</span><span>Rp {latestTransaction.change.toLocaleString('id-ID')}</span></div>
+            </div>
+            <div className="border-b border-dashed my-2"></div>
+            <p className="text-[10px] text-center">Terima Kasih Atas Kunjungan Anda!</p>
+          </div>
+        )}
+      </div>
+
+      <main className="max-w-4xl mx-auto p-4 print:hidden">
         {activeTab === 'kasir' ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="md:col-span-2 space-y-4">
@@ -259,7 +328,6 @@ export default function App() {
                   </button>
                 </div>
 
-                {/* Tombol Kamera Scanner dengan Proteksi Versi Pro */}
                 {isPro ? (
                   <div>
                     <button
@@ -279,28 +347,30 @@ export default function App() {
                 ) : (
                   <div className="bg-slate-50 border border-amber-200 rounded-lg p-3 text-center space-y-2">
                     <p className="text-xs text-slate-600 font-medium">
-                      🔒 Fitur <b>Scan Barcode Kamera HP</b> khusus untuk Pelanggan Versi Pro.
+                      🔒 Fitur <b>Scan Kamera & Cetak Struk Bluetooth</b> khusus Versi Pro.
                     </p>
                     <button
                       onClick={() => setShowUpgradeModal(true)}
                       className="bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold px-4 py-1.5 rounded text-xs shadow transition"
                     >
-                      Buka Akses Kamera (Langganan Rp 29rb/bln)
+                      Buka Fitur Pro (Rp 29rb/bln)
                     </button>
                   </div>
                 )}
               </div>
 
-              {/* Katalog Produk */}
+              {/* Katalog Produk dengan Status Stok */}
               <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-                <h2 className="font-semibold text-slate-700 mb-3 text-sm">Katalog Produk ({products.length})</h2>
+                <h2 className="font-semibold text-slate-700 mb-3 text-sm">Katalog & Stok Gudang ({products.length})</h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[350px] overflow-y-auto pr-1">
                   {products.map(p => (
                     <div key={p.id} className="border border-slate-200 rounded-lg p-3 flex flex-col justify-between bg-slate-50">
                       <div>
                         <div className="flex justify-between items-start">
                           <h3 className="font-bold text-slate-800 text-sm">{p.name}</h3>
-                          <span className="text-[10px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-medium">{p.category}</span>
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${p.stock <= 3 ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-800'}`}>
+                            Stok: {p.stock} pcs
+                          </span>
                         </div>
                         <p className="text-xs text-slate-500 mt-1">Barcode: {p.barcode}</p>
                       </div>
@@ -308,7 +378,8 @@ export default function App() {
                         <span className="font-bold text-blue-600 text-sm">Rp {p.price.toLocaleString('id-ID')}</span>
                         <button
                           onClick={() => addToCart(p)}
-                          className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-1.5 rounded font-medium transition"
+                          disabled={p.stock <= 0}
+                          className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white text-xs px-3 py-1.5 rounded font-medium transition"
                         >
                           + Tambah
                         </button>
@@ -319,7 +390,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* Keranjang Belanja */}
+            {/* Keranjang Kasir */}
             <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between">
               <div>
                 <h2 className="font-semibold text-slate-700 mb-3 text-sm border-b pb-2">Keranjang Kasir</h2>
@@ -353,7 +424,7 @@ export default function App() {
                 {isPro && (
                   <div className="flex justify-between text-emerald-600 font-medium">
                     <span>Estimasi Profit/Untung</span>
-                    <span>Rp {profitEst.toLocaleString('id-ID')}</span>
+                    <span>Rp {cart.reduce((s, it) => s + ((it.price - (it.costPrice || it.price * 0.8)) * it.qty), 0).toLocaleString('id-ID')}</span>
                   </div>
                 )}
                 <div className="mt-2">
@@ -377,8 +448,18 @@ export default function App() {
                   disabled={cart.length === 0 || cashNumber < grandTotal}
                   className="w-full mt-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white py-2 rounded-lg font-medium text-xs transition"
                 >
-                  Selesaikan Transaksi
+                  Selesaikan & Bayar
                 </button>
+
+                {/* Tombol Cetak Struk Cepat khusus Pro */}
+                {isPro && latestTransaction && (
+                  <button
+                    onClick={() => handlePrintReceipt(latestTransaction)}
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-lg font-bold text-xs transition flex items-center justify-center gap-1"
+                  >
+                    🖨️ Cetak Struk Transaksi Terakhir
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -388,7 +469,7 @@ export default function App() {
               <h2 className="font-semibold text-slate-700 text-sm">Laporan Riwayat Penjualan Toko</h2>
               {isPro && salesHistory.length > 0 && (
                 <span className="text-xs bg-emerald-100 text-emerald-800 font-bold px-3 py-1 rounded-full">
-                  Total Keuntungan Bersih: Rp {salesHistory.reduce((s, t) => s + (t.profit || 0), 0).toLocaleString('id-ID')}
+                  Total Keuntungan: Rp {salesHistory.reduce((s, t) => s + (t.profit || 0), 0).toLocaleString('id-ID')}
                 </span>
               )}
             </div>
@@ -399,9 +480,19 @@ export default function App() {
               <div className="space-y-4 max-h-[500px] overflow-y-auto">
                 {salesHistory.map(trx => (
                   <div key={trx.id} className="border border-slate-200 rounded-lg p-3 text-xs bg-slate-50 space-y-2">
-                    <div className="flex justify-between font-medium text-slate-700 border-b pb-1">
+                    <div className="flex justify-between font-medium text-slate-700 border-b pb-1 items-center">
                       <span>ID: #{trx.id}</span>
-                      <span className="text-slate-500">{trx.date}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-500">{trx.date}</span>
+                        {isPro && (
+                          <button
+                            onClick={() => handlePrintReceipt(trx)}
+                            className="bg-slate-800 text-white px-2 py-1 rounded text-[10px] font-bold hover:bg-slate-900"
+                          >
+                            🖨️ Cetak Struk
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <ul className="space-y-1">
                       {trx.items.map((it, idx) => (
@@ -413,13 +504,9 @@ export default function App() {
                     </ul>
                     <div className="pt-2 border-t flex justify-between font-bold text-slate-800 items-center">
                       <span>Total: Rp {trx.grandTotal.toLocaleString('id-ID')}</span>
-                      {isPro ? (
+                      {isPro && (
                         <span className="text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                           Untung: Rp {(trx.profit || 0).toLocaleString('id-ID')}
-                        </span>
-                      ) : (
-                        <span className="text-amber-600 text-[10px] italic">
-                          (Upgrade ke Pro untuk lihat rincian untung)
                         </span>
                       )}
                     </div>
@@ -431,22 +518,22 @@ export default function App() {
         )}
       </main>
 
-      {/* Modal Upgrade / Langganan Pro */}
+      {/* Modal Upgrade Pro */}
       {showUpgradeModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 print:hidden">
           <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-xl space-y-4 text-xs">
             <div className="text-center space-y-1">
               <span className="text-2xl">⭐</span>
               <h3 className="font-bold text-slate-800 text-base">Berlangganan POS UMKM Pro</h3>
-              <p className="text-slate-500">Nikmati scan kamera tanpa batas & laporan rincian keuntungan toko.</p>
+              <p className="text-slate-500">Fitur cetak struk bluetooth, scan kamera, & manajemen stok gudang.</p>
             </div>
 
             <div className="bg-blue-50 border border-blue-200 p-3 rounded-lg space-y-1.5 text-blue-900">
               <p className="font-bold">Keuntungan Paket Pro:</p>
               <ul className="list-disc pl-4 space-y-1 text-slate-700">
-                <li>Scan Barcode via Kamera HP sepuasnya</li>
-                <li>Laporan Hitung Otomatis Keuntungan Bersih (Profit)</li>
-                <li>Dukungan Prioritas & Update Fitur Toko</li>
+                <li>Cetak Struk Nota via Printer Thermal Bluetooth</li>
+                <li>Scan Barcode via Kamera HP Tanpa Batas</li>
+                <li>Manajemen Stok Gudang & Hitung Otomatis Profit</li>
               </ul>
               <p className="font-bold pt-1 text-blue-600">Biaya: Hanya Rp 29.000 / bulan</p>
             </div>
@@ -457,13 +544,13 @@ export default function App() {
                 <input
                   type="text"
                   required
-                  placeholder="Contoh kode uji: PRO-UMKM-2026"
+                  placeholder="Kode uji coba: PRO-UMKM-2026"
                   value={licenseKey}
                   onChange={(e) => setLicenseKey(e.target.value)}
                   className="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 font-bold"
                 />
                 <p className="text-[10px] text-slate-400 mt-1">
-                  *Untuk pengujian demo, ketik kode: <code className="bg-slate-100 text-blue-600 px-1 py-0.5 rounded font-bold">PRO-UMKM-2026</code>
+                  *Gunakan kode demo: <code className="bg-slate-100 text-blue-600 px-1 py-0.5 rounded font-bold">PRO-UMKM-2026</code>
                 </p>
               </div>
 
@@ -487,12 +574,12 @@ export default function App() {
         </div>
       )}
 
-      {/* Modal Input Barang Baru */}
+      {/* Modal Tambah Produk & Stok */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 print:hidden">
           <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-xl space-y-4 text-xs">
-            <h3 className="font-bold text-slate-800 text-base">📦 Tambah Produk Baru</h3>
-            <p className="text-slate-500">Barang ini belum terdaftar. Masukkan harga jual dan modal untuk perhitungan profit.</p>
+            <h3 className="font-bold text-slate-800 text-base">📦 Tambah Produk & Stok Gudang</h3>
+            <p className="text-slate-500">Barang ini belum terdaftar. Masukkan harga jual dan jumlah stok awal.</p>
             
             <form onSubmit={handleSaveNewProduct} className="space-y-3">
               <div>
@@ -518,25 +605,35 @@ export default function App() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <div>
-                  <label className="block font-medium text-slate-700 mb-1">Harga Jual (Rp)*</label>
+                  <label className="block font-medium text-slate-700 mb-1">Harga Jual*</label>
                   <input
                     type="number"
                     required
                     value={newPrice}
                     onChange={(e) => setNewPrice(e.target.value)}
-                    placeholder="Harga jual..."
+                    placeholder="Jual..."
                     className="w-full border rounded p-2 bg-yellow-50 font-bold"
                   />
                 </div>
                 <div>
-                  <label className="block font-medium text-slate-700 mb-1">Harga Modal (Rp)</label>
+                  <label className="block font-medium text-slate-700 mb-1">Harga Modal</label>
                   <input
                     type="number"
                     value={newCostPrice}
                     onChange={(e) => setNewCostPrice(e.target.value)}
-                    placeholder="Modal kulakan..."
+                    placeholder="Modal..."
+                    className="w-full border rounded p-2"
+                  />
+                </div>
+                <div>
+                  <label className="block font-medium text-slate-700 mb-1">Stok Awal</label>
+                  <input
+                    type="number"
+                    value={newStock}
+                    onChange={(e) => setNewStock(e.target.value)}
+                    placeholder="Stok..."
                     className="w-full border rounded p-2"
                   />
                 </div>
