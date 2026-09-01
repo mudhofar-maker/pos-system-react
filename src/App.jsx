@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 
 const initialProducts = [
   { id: 1, barcode: '8991001', name: 'Laptop Dell XPS 13', category: 'Elektronik', price: 12000000, weight: '1.2 kg' },
-  { id: 2, barcode: '8991002', name: 'Mouse Logitech MX Master', category: 'Elektronik', price: 750000, weight: '150 g' }
+  { id: 2, barcode: '8991002', name: 'Mouse Logitech MX Master', category: 'Elektronik', price: 750000, weight: '150 g' },
+  { id: 3, barcode: '8991003', name: 'Keyboard Mechanical RGB', category: 'Elektronik', price: 1200000, weight: '800 g' }
 ];
 
 export default function App() {
@@ -12,51 +13,49 @@ export default function App() {
   const [barcodeInput, setBarcodeInput] = useState('');
   const [cashGiven, setCashGiven] = useState('');
   const [salesHistory, setSalesHistory] = useState([]);
-  const [activeTab, setActiveTab] = useState('kasir'); // 'kasir' atau 'laporan'
+  const [activeTab, setActiveTab] = useState('kasir');
   
-  // State untuk Modal / Form Tambah Produk Baru
+  // State untuk Scanner Kamera HP
+  const [isScanning, setIsScanning] = useState(false);
+
+  // State untuk Form Produk Baru / Bongkar Truk
   const [showAddModal, setShowAddModal] = useState(false);
   const [newBarcode, setNewBarcode] = useState('');
   const [newName, setNewName] = useState('');
   const [newCategory, setNewCategory] = useState('');
-  const [newPrice, setNewPrice] = useState(''); // Kosong secara default agar bisa disesuaikan
+  const [newPrice, setNewPrice] = useState('');
   const [newWeight, setNewWeight] = useState('');
 
-  // State untuk Kamera Scanner
-  const [scanningActive, setScanningActive] = useState(false);
-  const scannerInstanceRef = useRef(null);
-
+  // Jalankan Html5QrcodeScanner saat mode scan aktif
   useEffect(() => {
-    if (scanningActive) {
-      const scanner = new Html5QrcodeScanner(
+    let scanner = null;
+    if (isScanning) {
+      scanner = new Html5QrcodeScanner(
         "reader",
         { fps: 10, qrbox: { width: 250, height: 150 } },
         false
       );
-      scannerInstanceRef.current = scanner;
 
       scanner.render(
         (decodedText) => {
-          // Sukses scan barcode dari kamera HP
-          scanner.clear().catch(error => console.error("Failed to clear scanner. ", error));
-          setScanningActive(false);
-          handleDetectedCode(decodedText);
+          scanner.clear();
+          setIsScanning(false);
+          handleProcessedCode(decodedText);
         },
         (error) => {
-          // Abaikan error frame kamera kosong
+          // Error abaikan saat proses pencarian frame barcode
         }
       );
     }
 
     return () => {
-      if (scannerInstanceRef.current) {
-        scannerInstanceRef.current.clear().catch(() => {});
+      if (scanner) {
+        scanner.clear().catch(error => console.error("Failed to clear scanner. ", error));
       }
     };
-  }, [scanningActive]);
+  }, [isScanning]);
 
-  // Fungsi Cek Barcode atau Nama (Mendukung Manual & Hasil Scan Kamera)
-  const handleDetectedCode = (codeOrName) => {
+  const handleProcessedCode = (codeOrName) => {
     const query = (codeOrName || barcodeInput).trim();
     if (!query) return;
 
@@ -68,17 +67,16 @@ export default function App() {
       addToCart(found);
       setBarcodeInput('');
     } else {
-      // Jika tidak ditemukan, buka form otomatis
-      // Jika berupa angka/barcode, masukkan ke kolom barcode. Jika teks/nama, masukkan ke nama.
-      if (!isNaN(query) && query.length > 3) {
+      // Jika produk belum terdaftar, buka form input otomatis
+      if (!isNaN(query)) {
         setNewBarcode(query);
         setNewName('');
       } else {
-        setNewBarcode('');
+        setNewBarcode(`BARCODE-${Math.floor(1000 + Math.random() * 9000)}`);
         setNewName(query);
       }
-      setNewCategory('');
-      setNewPrice(''); // Dikosongkan mutlak agar siap disesuaikan
+      setNewCategory('Umum');
+      setNewPrice('');
       setNewWeight('1 pcs');
       setShowAddModal(true);
       setBarcodeInput('');
@@ -140,19 +138,19 @@ export default function App() {
     setSalesHistory([newTransaction, ...salesHistory]);
     setCart([]);
     setCashGiven('');
-    alert('Transaksi berhasil disimpan!');
+    alert('Transaksi berhasil disimpan & dicatat!');
   };
 
   const handleSaveNewProduct = (e) => {
     e.preventDefault();
     if (!newName || !newPrice) {
-      alert('Nama Barang dan Harga Wajib diisi!');
+      alert('Nama Barang dan Harga Wajib Diisi!');
       return;
     }
 
     const newProd = {
       id: Date.now(),
-      barcode: newBarcode || `MANUAL-${Date.now().toString().slice(-5)}`,
+      barcode: newBarcode || `BARCODE-${Math.floor(1000 + Math.random() * 9000)}`,
       name: newName,
       category: newCategory || 'Umum',
       price: parseFloat(newPrice) || 0,
@@ -162,7 +160,6 @@ export default function App() {
     setProducts([newProd, ...products]);
     addToCart(newProd);
 
-    // Reset Form & Tutup Modal
     setShowAddModal(false);
     setNewBarcode('');
     setNewName('');
@@ -176,15 +173,15 @@ export default function App() {
       <header className="bg-blue-600 text-white p-4 shadow-md">
         <div className="max-w-4xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-3">
           <div>
-            <h1 className="text-xl font-bold">POS System - Gudang & Kasir</h1>
-            <p className="text-xs text-blue-100">Scan Barcode Kamera & Input Manual Fleksibel</p>
+            <h1 className="text-xl font-bold">POS System - Kasir & Scanner</h1>
+            <p className="text-xs text-blue-100">Siap Jual ke Konsumen & Scan Barcode HP</p>
           </div>
           <div className="flex gap-2">
             <button
               onClick={() => setActiveTab('kasir')}
               className={`px-4 py-2 rounded-lg font-medium text-sm transition ${activeTab === 'kasir' ? 'bg-white text-blue-600 shadow' : 'bg-blue-700 text-white'}`}
             >
-              Kasir & Scan Truk
+              Kasir Utama
             </button>
             <button
               onClick={() => setActiveTab('laporan')}
@@ -200,43 +197,45 @@ export default function App() {
         {activeTab === 'kasir' ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="md:col-span-2 space-y-4">
-              {/* Bagian Input & Tombol Kamera Scanner HP */}
+              {/* Menu Scan & Input Manual */}
               <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-3">
                 <div className="flex gap-2">
                   <input
                     type="text"
-                    placeholder="Scan Barcode / Ketik Nama Barang (Manual)..."
+                    placeholder="Scan Barcode / Ketik Nama Barang..."
                     value={barcodeInput}
                     onChange={(e) => setBarcodeInput(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleDetectedCode()}
+                    onKeyDown={(e) => e.key === 'Enter' && handleProcessedCode()}
                     className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                   <button
-                    onClick={() => handleDetectedCode()}
+                    onClick={() => handleProcessedCode()}
                     className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition"
                   >
-                    Cari / Input
+                    Cari / Tambah
                   </button>
                 </div>
 
+                {/* Tombol Kamera Scanner Utama */}
                 <button
-                  onClick={() => setScanningActive(!scanningActive)}
-                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition shadow-sm"
+                  onClick={() => setIsScanning(!isScanning)}
+                  className={`w-full py-3 rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition shadow-sm ${isScanning ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}
                 >
-                  <span>📷 {scanningActive ? 'Tutup Kamera Scanner' : 'Buka Scanner Kamera HP (Bongkar Truk)'}</span>
+                  <span>{isScanning ? '❌ Tutup Kamera Scanner' : '📷 Buka Kamera Scanner Barcode'}</span>
                 </button>
 
-                {scanningActive && (
-                  <div className="p-2 border border-emerald-300 rounded-lg bg-emerald-50">
+                {/* Kotak Tampilan Kamera HTML5-QRCode */}
+                {isScanning && (
+                  <div className="p-2 border border-emerald-500 rounded-lg bg-slate-50">
                     <div id="reader" className="w-full"></div>
-                    <p className="text-[11px] text-center text-emerald-700 mt-2 font-medium">Arahkan kamera ke barcode kemasan barang...</p>
+                    <p className="text-[11px] text-slate-500 text-center mt-2">Arahkan kamera ke barcode produk untuk langsung masuk keranjang kasir.</p>
                   </div>
                 )}
               </div>
 
-              {/* Katalog Produk */}
+              {/* Katalog Produk Siap Jual */}
               <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-                <h2 className="font-semibold text-slate-700 mb-3 text-sm">Katalog Produk Terdaftar ({products.length})</h2>
+                <h2 className="font-semibold text-slate-700 mb-3 text-sm">Katalog Produk ({products.length})</h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[350px] overflow-y-auto pr-1">
                   {products.map(p => (
                     <div key={p.id} className="border border-slate-200 rounded-lg p-3 flex flex-col justify-between bg-slate-50">
@@ -262,12 +261,12 @@ export default function App() {
               </div>
             </div>
 
-            {/* Keranjang Belanja */}
+            {/* Keranjang Belanja Konsumen */}
             <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between">
               <div>
-                <h2 className="font-semibold text-slate-700 mb-3 text-sm border-b pb-2">Keranjang Kasir</h2>
+                <h2 className="font-semibold text-slate-700 mb-3 text-sm border-b pb-2">Keranjang Konsumen</h2>
                 {cart.length === 0 ? (
-                  <p className="text-slate-400 text-xs text-center py-10">Keranjang kosong</p>
+                  <p className="text-slate-400 text-xs text-center py-10">Belum ada barang di keranjang</p>
                 ) : (
                   <div className="space-y-3 max-h-[220px] overflow-y-auto pr-1">
                     {cart.map(item => (
@@ -290,11 +289,11 @@ export default function App() {
 
               <div className="mt-4 pt-3 border-t text-xs space-y-1.5">
                 <div className="flex justify-between font-bold text-slate-800 text-sm">
-                  <span>Total</span>
+                  <span>Total Tagihan</span>
                   <span className="text-blue-600">Rp {grandTotal.toLocaleString('id-ID')}</span>
                 </div>
                 <div className="mt-2">
-                  <label className="block text-[11px] text-slate-600 mb-1">Uang Tunai (Rp)</label>
+                  <label className="block text-[11px] text-slate-600 mb-1">Uang Tunai Pembeli (Rp)</label>
                   <input
                     type="number"
                     placeholder="Nominal bayar"
@@ -305,7 +304,7 @@ export default function App() {
                 </div>
                 {cashNumber > 0 && (
                   <div className={`flex justify-between font-bold text-xs pt-1 ${change >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                    <span>Kembalian</span>
+                    <span>Uang Kembalian</span>
                     <span>Rp {change >= 0 ? change.toLocaleString('id-ID') : 'Kurang'}</span>
                   </div>
                 )}
@@ -314,22 +313,22 @@ export default function App() {
                   disabled={cart.length === 0 || cashNumber < grandTotal}
                   className="w-full mt-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white py-2 rounded-lg font-medium text-xs transition"
                 >
-                  Selesaikan Transaksi
+                  Bayar & Selesaikan Penjualan
                 </button>
               </div>
             </div>
           </div>
         ) : (
           <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-            <h2 className="font-semibold text-slate-700 mb-4 text-sm">Laporan Transaksi Harian</h2>
+            <h2 className="font-semibold text-slate-700 mb-4 text-sm">Laporan Riwayat Penjualan</h2>
             {salesHistory.length === 0 ? (
-              <p className="text-slate-400 text-xs text-center py-10">Belum ada transaksi.</p>
+              <p className="text-slate-400 text-xs text-center py-10">Belum ada transaksi penjualan.</p>
             ) : (
               <div className="space-y-4 max-h-[500px] overflow-y-auto">
                 {salesHistory.map(trx => (
                   <div key={trx.id} className="border border-slate-200 rounded-lg p-3 text-xs bg-slate-50 space-y-2">
                     <div className="flex justify-between font-medium text-slate-700 border-b pb-1">
-                      <span>ID: #{trx.id}</span>
+                      <span>ID Struk: #{trx.id}</span>
                       <span className="text-slate-500">{trx.date}</span>
                     </div>
                     <ul className="space-y-1">
@@ -342,6 +341,7 @@ export default function App() {
                     </ul>
                     <div className="pt-2 border-t flex justify-between font-bold text-slate-800">
                       <span>Total: Rp {trx.grandTotal.toLocaleString('id-ID')}</span>
+                      <span className="text-emerald-600">Kembali: Rp {trx.change.toLocaleString('id-ID')}</span>
                     </div>
                   </div>
                 ))}
@@ -351,18 +351,18 @@ export default function App() {
         )}
       </main>
 
-      {/* Modal Form Otomatis Input Barang Baru / Penyesuaian Harga */}
+      {/* Modal Input Otomatis Produk Baru */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-xl space-y-4">
-            <h3 className="font-bold text-slate-800 text-base">📦 Barang Baru Terdeteksi (Input Otomatis)</h3>
+            <h3 className="font-bold text-slate-800 text-base">📦 Tambah Produk Baru dari Scan</h3>
             <p className="text-xs text-slate-500">
-              Barcode dari kemasan berhasil dibaca. Silakan lengkapi Nama, Kategori, dan sesuaikan Harga jualnya.
+              Barcode ini belum terdaftar di katalog. Silakan lengkapi data produk dan harga jualnya agar bisa langsung dijual ke konsumen.
             </p>
             
             <form onSubmit={handleSaveNewProduct} className="space-y-3 text-xs">
               <div>
-                <label className="block font-medium text-slate-700 mb-1">Barcode / Kode Kemasan</label>
+                <label className="block font-medium text-slate-700 mb-1">Barcode Terdeteksi</label>
                 <input
                   type="text"
                   required
@@ -379,42 +379,42 @@ export default function App() {
                   required
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
-                  placeholder="Ketik nama barang..."
+                  placeholder="Nama produk..."
                   className="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                 />
               </div>
 
               <div>
-                <label className="block font-medium text-slate-700 mb-1">Kategori Barang</label>
+                <label className="block font-medium text-slate-700 mb-1">Kategori</label>
                 <input
                   type="text"
                   required
                   value={newCategory}
                   onChange={(e) => setNewCategory(e.target.value)}
-                  placeholder="Contoh: Rokok / Makanan / Minuman"
+                  placeholder="Contoh: Elektronik / Makanan"
                   className="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block font-medium text-slate-700 mb-1">Harga Jual (Rp) - Wajib Diisi</label>
+                  <label className="block font-medium text-slate-700 mb-1">Harga Jual (Rp)*</label>
                   <input
                     type="number"
                     required
                     value={newPrice}
                     onChange={(e) => setNewPrice(e.target.value)}
                     placeholder="Masukkan harga..."
-                    className="w-full border rounded p-2 bg-yellow-50 border-yellow-300 focus:ring-2 focus:ring-blue-500 focus:outline-none font-bold"
+                    className="w-full border rounded p-2 bg-yellow-50 border-yellow-300 font-bold focus:ring-2 focus:ring-blue-500 focus:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="block font-medium text-slate-700 mb-1">Satuan / Berat</label>
+                  <label className="block font-medium text-slate-700 mb-1">Satuan</label>
                   <input
                     type="text"
                     value={newWeight}
                     onChange={(e) => setNewWeight(e.target.value)}
-                    placeholder="Contoh: 1 pcs"
+                    placeholder="1 pcs"
                     className="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                   />
                 </div>
@@ -432,7 +432,7 @@ export default function App() {
                   type="submit"
                   className="flex-1 bg-blue-600 text-white py-2 rounded font-medium hover:bg-blue-700 shadow"
                 >
-                  Simpan & Masukkan
+                  Simpan & Jual
                 </button>
               </div>
             </form>
