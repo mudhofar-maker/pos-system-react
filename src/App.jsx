@@ -172,4 +172,10 @@ export default function App() {
   cashGiven: cashGiven || 0,
   change: 0
 };
+      return (
+    <div className="p-4">
+      {/* Tampilan POS Anda */}
+    </div>
+  );
+                               }
     
