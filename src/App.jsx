@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Html5QrcodeScanner } from 'html5-qrcode';
+import HardwareSettings from './components/HardwareSettings';
 
 const initialProducts = [
   { id: 1, barcode: '8991001', name: 'Laptop Dell XPS 13', category: 'Elektronik', price: 12000000, costPrice: 10000000, stock: 10 },
@@ -307,6 +308,8 @@ export default function App() {
 
       <main className="max-w-4xl mx-auto p-4 print:hidden">
         {activeTab === 'kasir' ? (
+      <HardwareSettings />
+      
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="md:col-span-2 space-y-4">
               {/* Menu Scan & Input Manual */}
