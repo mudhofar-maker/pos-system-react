@@ -165,3 +165,11 @@ export default function App() {
 
     const newTransaction = {
       id: Date.now(),
+  date: new Date().toISOString(),
+  items: [...cart],
+  total: cart.reduce((sum, item) => sum + (item.price * item.quantity), 0),
+  discount: 0,
+  cashGiven: cashGiven || 0,
+  change: 0
+};
+    
