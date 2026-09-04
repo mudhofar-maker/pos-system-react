@@ -45,6 +45,7 @@ export default function App(){
   
   // State untuk Scanner Kamera HP
   const [isScanning, setIsScanning] = useState(false);
+  const [showScannerModal, setShowScannerModal] = useState(false);
 
   // State untuk Form Produk Baru
   const [showAddModal, setShowAddModal] = useState(false);
@@ -71,10 +72,10 @@ export default function App(){
   // Scanner Effect
   useEffect(() => {
     let scanner = null;
-    if (isScanning && isPro) {
+    if (isScanning) {
       scanner = new Html5QrcodeScanner(
         "reader",
-        { fps: 10, qrbox: { width: 250, height: 150 } },
+        { fps: 10, qrbox: { width: 250, height: 250 } },
         false
       );
 
@@ -82,9 +83,12 @@ export default function App(){
         (decodedText) => {
           scanner.clear();
           setIsScanning(false);
+          setShowScannerModal(false);
           handleProcessedCode(decodedText);
         },
-        (error) => {}
+        (error) => {
+          console.log('Scanning error:', error);
+        }
       );
     }
 
@@ -93,7 +97,7 @@ export default function App(){
         scanner.clear().catch(error => console.error("Failed to clear scanner. ", error));
       }
     };
-  }, [isScanning, isPro]);
+  }, [isScanning]);
 
   const handleProcessedCode = (codeOrName) => {
     const query = (codeOrName || barcodeInput).trim();
@@ -364,10 +368,42 @@ export default function App(){
                         border: `1px solid ${COLORS.border}`,
                         fontSize: '14px',
                         boxSizing: 'border-box',
-                        fontWeight: '500'
+                        fontWeight: '500',
+                        marginBottom: '10px'
                       }}
                       autoFocus
                     />
+                    
+                    {/* TOMBOL KAMERA BARCODE SCANNER */}
+                    <button
+                      onClick={() => {
+                        setIsScanning(true);
+                        setShowScannerModal(true);
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '12px',
+                        backgroundColor: COLORS.accent,
+                        color: COLORS.text,
+                        border: 'none',
+                        borderRadius: '6px',
+                        fontWeight: 'bold',
+                        fontSize: '13px',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                        boxShadow: '0 2px 6px rgba(0, 217, 255, 0.3)'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = '#00B8CC';
+                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 217, 255, 0.4)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = COLORS.accent;
+                        e.currentTarget.style.boxShadow = '0 2px 6px rgba(0, 217, 255, 0.3)';
+                      }}
+                    >
+                      📷 Buka Kamera Scanner
+                    </button>
                   </div>
 
                   {/* Katalog Grid */}
@@ -705,6 +741,85 @@ export default function App(){
             </div>
           </main>
         </div>
+
+        {/* SCANNER MODAL - Full Screen Camera View */}
+        {showScannerModal && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: COLORS.text,
+            zIndex: 1000,
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
+            {/* Scanner Header */}
+            <div style={{
+              backgroundColor: COLORS.primary,
+              color: COLORS.surface,
+              padding: '16px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexShrink: 0
+            }}>
+              <h2 style={{ margin: 0, fontSize: '16px' }}>📷 Kamera Barcode</h2>
+              <button
+                onClick={() => {
+                  setIsScanning(false);
+                  setShowScannerModal(false);
+                }}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: COLORS.error,
+                  color: COLORS.surface,
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  fontSize: '12px'
+                }}
+              >
+                ✕ Tutup
+              </button>
+            </div>
+
+            {/* Scanner Container */}
+            <div style={{
+              flex: 1,
+              overflow: 'auto',
+              backgroundColor: '#000'
+            }} id="reader">
+            </div>
+
+            {/* Scanner Footer */}
+            <div style={{
+              backgroundColor: COLORS.background,
+              padding: '16px',
+              textAlign: 'center',
+              flexShrink: 0,
+              borderTop: `2px solid ${COLORS.border}`
+            }}>
+              <p style={{ 
+                margin: 0, 
+                color: COLORS.text,
+                fontWeight: 'bold',
+                fontSize: '13px'
+              }}>
+                🔍 Arahkan barcode ke kamera
+              </p>
+              <p style={{ 
+                margin: '6px 0 0 0', 
+                color: COLORS.textSecondary,
+                fontSize: '11px'
+              }}>
+                Barcode akan otomatis ditambahkan ke keranjang
+              </p>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
