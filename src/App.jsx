@@ -167,19 +167,27 @@ export default function App(){
 
     const newTransaction = {
       id: Date.now(),
-  date: new Date().toISOString(),
-  items: [...cart],
-  total: cart.reduce((sum, item) => sum + (item.price * item.quantity), 0),
-  discount: 0,
-  cashGiven: cashGiven || 0,
-  change: 0
-};
-      return (
-    <div className="p-4">
-       <POSAdvancedInventory />
+      date: new Date().toISOString(),
+      items: [...cart],
+      total: subtotal,
+      tax: tax,
+      grandTotal: grandTotal,
+      discount: 0,
+      cashGiven: cashGiven || 0,
+      change: change,
+      profit: transactionProfit
+    };
 
+    setSalesHistory(prevHistory => [...prevHistory, newTransaction]);
+    setLatestTransaction(newTransaction);
+    setCart([]);
+    setCashGiven('');
+    setBarcodeInput('');
+  };
+
+  return (
+    <div className="p-4">
+      <POSAdvancedInventory />
     </div>
   );
-  }
 }
-                    
