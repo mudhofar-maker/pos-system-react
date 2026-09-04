@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 import HardwareSettings from './components/HardwareSettings';
 import POSAdvancedInventory from './components/POSAdvancedInventory';
+import BarcodeManagement, { IntakeForm } from './components/BarcodeManagement';
 
 // ==========================================
 // SAPPHIRE BLUE THEME COLOR PALETTE
@@ -47,6 +48,9 @@ export default function App(){
   const [isScanning, setIsScanning] = useState(false);
   const [showScannerModal, setShowScannerModal] = useState(false);
 
+  // State untuk Intake Form (Scan Produk Masuk)
+  const [showIntakeForm, setShowIntakeForm] = useState(false);
+
   // State untuk Form Produk Baru
   const [showAddModal, setShowAddModal] = useState(false);
   const [newBarcode, setNewBarcode] = useState('');
@@ -69,10 +73,23 @@ export default function App(){
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // Load inventory from localStorage on mount
+  useEffect(() => {
+    const savedInventory = BarcodeManagement.getInventory();
+    if (savedInventory.length > 0) {
+      // Merge dengan initial products
+      const merged = [
+        ...initialProducts,
+        ...savedInventory.filter(inv => !initialProducts.some(prod => prod.barcode === inv.barcode))
+      ];
+      setProducts(merged);
+    }
+  }, []);
+
   // Scanner Effect
   useEffect(() => {
     let scanner = null;
-    if (isScanning) {
+    if (isScanning && !showIntakeForm) {
       scanner = new Html5QrcodeScanner(
         "reader",
         { fps: 10, qrbox: { width: 250, height: 250 } },
@@ -84,7 +101,8 @@ export default function App(){
           scanner.clear();
           setIsScanning(false);
           setShowScannerModal(false);
-          handleProcessedCode(decodedText);
+          // FUNGSI 2: Scan Kasir (Checkout)
+          handleCheckoutScan(decodedText);
         },
         (error) => {
           console.log('Scanning error:', error);
@@ -97,7 +115,34 @@ export default function App(){
         scanner.clear().catch(error => console.error("Failed to clear scanner. ", error));
       }
     };
-  }, [isScanning]);
+  }, [isScanning, showIntakeForm]);
+
+  /**
+   * FUNGSI 2: SCAN BARCODE KASIR (CHECKOUT)
+   * Barcode dicari di inventory, jika ada → masuk keranjang
+   */
+  const handleCheckoutScan = (decodedBarcode) => {
+    const query = decodedBarcode.trim();
+    if (!query) return;
+
+    BarcodeManagement.handleCheckoutScan(
+      query,
+      products,
+      (foundProduct) => {
+        // Product ditemukan di inventory
+        if (foundProduct.stock <= 0) {
+          alert('❌ Stok barang ini sudah habis di gudang!');
+          return;
+        }
+        addToCart(foundProduct);
+        setBarcodeInput('');
+      },
+      (notFoundBarcode) => {
+        // Product tidak ditemukan
+        alert(`⚠️ Barcode "${notFoundBarcode}" tidak ditemukan di sistem!\n\nScan produk masuk dulu (Intake) sebelum menjual.`);
+      }
+    );
+  };
 
   const handleProcessedCode = (codeOrName) => {
     const query = (codeOrName || barcodeInput).trim();
@@ -195,6 +240,9 @@ export default function App(){
       })
     );
 
+    // Update stok di inventory juga
+    BarcodeManagement.updateStockAfterCheckout(cart);
+
     const transactionProfit = cart.reduce((sum, item) => {
       const c = item.costPrice || (item.price * 0.8);
       return sum + ((item.price - c) * item.qty);
@@ -222,6 +270,20 @@ export default function App(){
     alert(`✓ Transaksi berhasil!\nTotal: Rp ${grandTotal.toLocaleString('id-ID')}\nKembalian: Rp ${change.toLocaleString('id-ID')}`);
   };
 
+  /**
+   * Handle Intake Form Success
+   * FUNGSI 1: Produk berhasil di-scan masuk → disimpan ke inventory
+   */
+  const handleIntakeSuccess = (productData) => {
+    // Tambah produk ke state products juga
+    const newProduct = {
+      id: Date.now(),
+      ...productData,
+      source: 'INTAKE_SCAN'
+    };
+    setProducts(prev => [...prev, newProduct]);
+  };
+
   // ==========================================
   // RENDER MOBILE VIEW
   // ==========================================
@@ -245,6 +307,22 @@ export default function App(){
               🛒 POS Mobile
             </h1>
             <p style={{ margin: 0, fontSize: '12px', opacity: 0.9 }}>Toko Elektronik</p>
+            <button
+              onClick={() => setShowIntakeForm(true)}
+              style={{
+                marginTop: '8px',
+                padding: '6px 12px',
+                backgroundColor: COLORS.accent,
+                color: COLORS.text,
+                border: 'none',
+                borderRadius: '4px',
+                fontSize: '11px',
+                fontWeight: 'bold',
+                cursor: 'pointer'
+              }}
+            >
+              📦 Scan Produk Masuk
+            </button>
           </header>
 
           {/* MAIN CONTENT - Mobile Tabs */}
@@ -349,7 +427,7 @@ export default function App(){
                       fontSize: '13px',
                       color: COLORS.text
                     }}>
-                      📱 Scan Barcode / SKU:
+                      📱 Scan Barcode Kasir (Checkout):
                     </label>
                     <input
                       type="text"
@@ -357,7 +435,7 @@ export default function App(){
                       onChange={(e) => setBarcodeInput(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
-                          handleProcessedCode(barcodeInput);
+                          handleCheckoutScan(barcodeInput);
                         }
                       }}
                       placeholder="Ketik atau scan..."
@@ -402,7 +480,7 @@ export default function App(){
                         e.currentTarget.style.boxShadow = '0 2px 6px rgba(0, 217, 255, 0.3)';
                       }}
                     >
-                      📷 Buka Kamera Scanner
+                      📷 Buka Kamera Scanner Kasir
                     </button>
                   </div>
 
@@ -765,7 +843,7 @@ export default function App(){
               alignItems: 'center',
               flexShrink: 0
             }}>
-              <h2 style={{ margin: 0, fontSize: '16px' }}>📷 Kamera Barcode</h2>
+              <h2 style={{ margin: 0, fontSize: '16px' }}>📷 Kamera Barcode Kasir</h2>
               <button
                 onClick={() => {
                   setIsScanning(false);
@@ -820,6 +898,14 @@ export default function App(){
             </div>
           </div>
         )}
+
+        {/* INTAKE FORM - Scan Produk Masuk */}
+        {showIntakeForm && (
+          <IntakeForm
+            onClose={() => setShowIntakeForm(false)}
+            onSuccess={handleIntakeSuccess}
+          />
+        )}
       </div>
     );
   }
@@ -837,11 +923,36 @@ export default function App(){
           color: COLORS.surface,
           padding: '18px 24px',
           boxShadow: '0 4px 12px rgba(0, 102, 204, 0.2)',
-          flexShrink: 0
+          flexShrink: 0,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
         }}>
           <h1 style={{ margin: '0', fontSize: '26px', fontWeight: 'bold' }}>
             🛒 Sistem POS - Toko Elektronik
           </h1>
+          <button
+            onClick={() => setShowIntakeForm(true)}
+            style={{
+              padding: '10px 20px',
+              backgroundColor: COLORS.accent,
+              color: COLORS.text,
+              border: 'none',
+              borderRadius: '6px',
+              fontSize: '14px',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = '#00B8CC';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = COLORS.accent;
+            }}
+          >
+            📦 Scan Produk Masuk (Intake)
+          </button>
         </header>
 
         {/* MAIN CONTENT - Desktop */}
@@ -867,7 +978,7 @@ export default function App(){
             border: `1px solid ${COLORS.border}`
           }}>
             
-            {/* Barcode Input Section */}
+            {/* Barcode Input Section - KASIR CHECKOUT */}
             <div style={{ 
               backgroundColor: COLORS.background,
               padding: '15px', 
@@ -881,7 +992,7 @@ export default function App(){
                 marginBottom: '8px',
                 color: COLORS.text
               }}>
-                📱 Scan Barcode / Input SKU:
+                📱 Scan Barcode Kasir / Input SKU (CHECKOUT):
               </label>
               <input
                 type="text"
@@ -889,7 +1000,7 @@ export default function App(){
                 onChange={(e) => setBarcodeInput(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
-                    handleProcessedCode(barcodeInput);
+                    handleCheckoutScan(barcodeInput);
                   }
                 }}
                 placeholder="Arahkan scanner ke sini atau ketik SKU..."
@@ -1199,6 +1310,14 @@ export default function App(){
           </aside>
         </main>
       </div>
+
+      {/* INTAKE FORM - Scan Produk Masuk */}
+      {showIntakeForm && (
+        <IntakeForm
+          onClose={() => setShowIntakeForm(false)}
+          onSuccess={handleIntakeSuccess}
+        />
+      )}
     </div>
   );
 }
