@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 import HardwareSettings from './components/HardwareSettings';
+import POSAdvancedInventory from './components/POSAdvancedInventory';
+
 
 const initialProducts = [
   { id: 1, barcode: '8991001', name: 'Laptop Dell XPS 13', category: 'Elektronik', price: 12000000, costPrice: 10000000, stock: 10 },
@@ -8,7 +10,7 @@ const initialProducts = [
   { id: 3, barcode: '8991003', name: 'Keyboard Mechanical RGB', category: 'Elektronik', price: 1200000, costPrice: 950000, stock: 15 }
 ];
 
-export default function App() {
+export default function App(){
   const [products, setProducts] = useState(initialProducts);
   const [cart, setCart] = useState([]);
   const [barcodeInput, setBarcodeInput] = useState('');
@@ -174,7 +176,8 @@ export default function App() {
 };
       return (
     <div className="p-4">
-      {/* Tampilan POS Anda */}
+       <POSAdvancedInventory />
+
     </div>
   );
                                }
