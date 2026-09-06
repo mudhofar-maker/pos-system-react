@@ -24,8 +24,30 @@ import {
   BarChart3,
   Settings,
   Menu,
-  ArrowLeft
+  ArrowLeft,
+  Crown,
+  Star,
+  Zap,
+  Clock,
+  Calendar,
+  TrendingUp,
+  FileText,
+  Gift,
+  Shield
 } from 'lucide-react';
+
+// ============================================
+// CONTEXT UNTUK SUBSCRIPTION
+// ============================================
+const SubscriptionContext = React.createContext();
+
+function useSubscription() {
+  const context = React.useContext(SubscriptionContext);
+  if (!context) {
+    throw new Error('useSubscription must be used within SubscriptionProvider');
+  }
+  return context;
+}
 
 // ============================================
 // KOMPONEN UTAMA APP
@@ -34,24 +56,122 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [subscription, setSubscription] = useState({
+    plan: 'freemium', // 'freemium' or 'premium'
+    expiresAt: null,
+    features: {
+      maxProducts: 50,
+      maxTransactions: 100,
+      historyAccess: false,
+      unlimitedStorage: false
+    }
+  });
 
   useEffect(() => {
     // Cek session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setIsAuthenticated(!!session);
       setUser(session?.user || null);
+      
+      if (session?.user) {
+        loadSubscription(session.user.id);
+      }
+      
       setLoading(false);
     });
 
     // Listener auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription: authSubscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setIsAuthenticated(!!session);
       setUser(session?.user || null);
-      setLoading(false);
+      
+      if (session?.user) {
+        loadSubscription(session.user.id);
+      }
     });
 
-    return () => subscription.unsubscribe();
+    return () => authSubscription.unsubscribe();
   }, []);
+
+  const loadSubscription = async (userId) => {
+    try {
+      const { data, error } = await supabase
+        .from('subscriptions')
+        .select('*')
+        .eq('user_id', userId)
+        .single();
+
+      if (error && error.code !== 'PGRST116') throw error;
+
+      if (data) {
+        const features = data.plan === 'premium' 
+          ? {
+              maxProducts: Infinity,
+              maxTransactions: Infinity,
+              historyAccess: true,
+              unlimitedStorage: true
+            }
+          : {
+              maxProducts: 50,
+              maxTransactions: 100,
+              historyAccess: false,
+              unlimitedStorage: false
+            };
+
+        setSubscription({
+          plan: data.plan,
+          expiresAt: data.expires_at,
+          features
+        });
+      }
+    } catch (error) {
+      console.error('Error loading subscription:', error);
+    }
+  };
+
+  const upgradeSubscription = async (plan) => {
+    if (!user) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('subscriptions')
+        .upsert({
+          user_id: user.id,
+          plan: plan,
+          expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      const features = plan === 'premium'
+        ? {
+            maxProducts: Infinity,
+            maxTransactions: Infinity,
+            historyAccess: true,
+            unlimitedStorage: true
+          }
+        : {
+            maxProducts: 50,
+            maxTransactions: 100,
+            historyAccess: false,
+            unlimitedStorage: false
+          };
+
+      setSubscription({
+        plan: data.plan,
+        expiresAt: data.expires_at,
+        features
+      });
+
+      return { success: true, data };
+    } catch (error) {
+      console.error('Error upgrading subscription:', error);
+      return { success: false, error: error.message };
+    }
+  };
 
   if (loading) {
     return (
@@ -65,16 +185,18 @@ function App() {
   }
 
   return (
-    <Router>
-      <Routes>
-        <Route path="/login" element={!isAuthenticated ? <LoginPage /> : <Navigate to="/" />} />
-        <Route path="/" element={isAuthenticated ? <Dashboard user={user} /> : <Navigate to="/login" />} />
-        <Route path="/cashier" element={isAuthenticated ? <CashierPage user={user} /> : <Navigate to="/login" />} />
-        <Route path="/products" element={isAuthenticated ? <ProductsPage user={user} /> : <Navigate to="/login" />} />
-        <Route path="/history" element={isAuthenticated ? <HistoryPage user={user} /> : <Navigate to="/login" />} />
-        <Route path="/settings" element={isAuthenticated ? <SettingsPage user={user} /> : <Navigate to="/login" />} />
-      </Routes>
-    </Router>
+    <SubscriptionContext.Provider value={{ subscription, upgradeSubscription, user }}>
+      <Router>
+        <Routes>
+          <Route path="/login" element={!isAuthenticated ? <LoginPage /> : <Navigate to="/" />} />
+          <Route path="/" element={isAuthenticated ? <Dashboard user={user} /> : <Navigate to="/login" />} />
+          <Route path="/cashier" element={isAuthenticated ? <CashierPage user={user} /> : <Navigate to="/login" />} />
+          <Route path="/products" element={isAuthenticated ? <ProductsPage user={user} /> : <Navigate to="/login" />} />
+          <Route path="/history" element={isAuthenticated ? <HistoryPage user={user} /> : <Navigate to="/login" />} />
+          <Route path="/settings" element={isAuthenticated ? <SettingsPage user={user} /> : <Navigate to="/login" />} />
+        </Routes>
+      </Router>
+    </SubscriptionContext.Provider>
   );
 }
 
@@ -177,11 +299,12 @@ function LoginPage() {
 // DASHBOARD
 // ============================================
 function Dashboard({ user }) {
+  const { subscription } = useSubscription();
   const [stats, setStats] = useState({
     totalProducts: 0,
     totalSales: 0,
     todaySales: 0,
-    pendingOrders: 0
+    totalTransactions: 0
   });
   const [loading, setLoading] = useState(true);
 
@@ -200,24 +323,29 @@ function Dashboard({ user }) {
       const today = new Date().toISOString().split('T')[0];
       const { data: todaySales } = await supabase
         .from('transactions')
-        .select('total')
+        .select('total_amount')
         .gte('created_at', today)
         .lt('created_at', today + 'T23:59:59');
 
-      const todayTotal = todaySales?.reduce((sum, sale) => sum + sale.total, 0) || 0;
+      const todayTotal = todaySales?.reduce((sum, sale) => sum + sale.total_amount, 0) || 0;
 
       // Get total sales
       const { data: allSales } = await supabase
         .from('transactions')
-        .select('total');
+        .select('total_amount');
 
-      const totalSales = allSales?.reduce((sum, sale) => sum + sale.total, 0) || 0;
+      const totalSales = allSales?.reduce((sum, sale) => sum + sale.total_amount, 0) || 0;
+
+      // Get total transactions
+      const { count: transactionCount } = await supabase
+        .from('transactions')
+        .select('*', { count: 'exact', head: true });
 
       setStats({
         totalProducts: productCount || 0,
         totalSales: totalSales,
         todaySales: todayTotal,
-        pendingOrders: 0
+        totalTransactions: transactionCount || 0
       });
     } catch (error) {
       console.error('Error fetching stats:', error);
@@ -234,17 +362,23 @@ function Dashboard({ user }) {
     { label: 'Total Produk', value: stats.totalProducts, icon: Package, color: 'blue' },
     { label: 'Total Penjualan', value: `Rp ${stats.totalSales.toLocaleString()}`, icon: DollarSign, color: 'green' },
     { label: 'Penjualan Hari Ini', value: `Rp ${stats.todaySales.toLocaleString()}`, icon: BarChart3, color: 'purple' },
-    { label: 'Transaksi', value: stats.pendingOrders, icon: ShoppingCart, color: 'orange' },
+    { label: 'Total Transaksi', value: stats.totalTransactions, icon: ShoppingCart, color: 'orange' },
   ];
 
   return (
     <div className="min-h-screen bg-sapphire-50">
       {/* Navbar */}
-      <nav className="bg-sapphire-800 text-white p-4 shadow-lg">
+      <nav className="bg-sapphire-800 text-white p-4 shadow-lg sticky top-0 z-50">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Package className="w-6 h-6" />
             <h1 className="text-xl font-bold">POS System</h1>
+            {subscription.plan === 'premium' && (
+              <span className="bg-yellow-400 text-sapphire-900 text-xs px-2 py-1 rounded-full font-medium flex items-center gap-1">
+                <Crown className="w-3 h-3" />
+                Premium
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-4">
             <span className="text-sm opacity-80">{user?.email}</span>
@@ -286,7 +420,7 @@ function Dashboard({ user }) {
         </div>
 
         {/* Quick Actions */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
           <a
             href="/cashier"
             className="bg-white rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow flex items-center gap-4"
@@ -325,6 +459,19 @@ function Dashboard({ user }) {
               <p className="text-sm text-sapphire-600">Lihat transaksi</p>
             </div>
           </a>
+
+          <a
+            href="/settings"
+            className="bg-white rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow flex items-center gap-4"
+          >
+            <div className="p-3 bg-orange-100 rounded-lg">
+              <Settings className="w-6 h-6 text-orange-600" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-sapphire-900">Pengaturan</h3>
+              <p className="text-sm text-sapphire-600">Atur aplikasi</p>
+            </div>
+          </a>
         </div>
       </div>
     </div>
@@ -335,6 +482,7 @@ function Dashboard({ user }) {
 // HALAMAN KASIR (DENGAN SCANNER)
 // ============================================
 function CashierPage({ user }) {
+  const { subscription } = useSubscription();
   const [cart, setCart] = useState([]);
   const [isScanning, setIsScanning] = useState(false);
   const [scannerError, setScannerError] = useState(null);
@@ -351,13 +499,16 @@ function CashierPage({ user }) {
   });
   const [loading, setLoading] = useState(false);
   const [notification, setNotification] = useState(null);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [cashAmount, setCashAmount] = useState('');
+  const [transaction, setTransaction] = useState(null);
 
   const scannerRef = useRef(null);
   const videoRef = useRef(null);
   const codeReaderRef = useRef(null);
 
   // ============================================
-  // FUNGSI SCANNER - DIPERBAIKI
+  // FUNGSI SCANNER
   // ============================================
   const startScanner = async () => {
     try {
@@ -365,12 +516,10 @@ function CashierPage({ user }) {
       setIsScanning(true);
       setShowManualInput(false);
 
-      // Cek dukungan browser
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error('Browser tidak mendukung akses kamera. Gunakan Chrome atau Firefox terbaru.');
+        throw new Error('Browser tidak mendukung akses kamera.');
       }
 
-      // Cek izin kamera
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'environment' }
@@ -380,17 +529,15 @@ function CashierPage({ user }) {
         if (permError.name === 'NotAllowedError') {
           throw new Error('Izin kamera ditolak. Silakan berikan izin kamera di pengaturan browser.');
         } else if (permError.name === 'NotFoundError') {
-          throw new Error('Kamera tidak ditemukan. Pastikan HP Anda memiliki kamera.');
+          throw new Error('Kamera tidak ditemukan.');
         } else {
           throw new Error('Gagal mengakses kamera: ' + permError.message);
         }
       }
 
-      // Inisialisasi reader dengan konfigurasi yang lebih stabil
       const codeReader = new BrowserMultiFormatReader();
       codeReaderRef.current = codeReader;
 
-      // Konfigurasi untuk kamera belakang dengan fallback
       const constraints = {
         video: {
           facingMode: 'environment',
@@ -399,19 +546,14 @@ function CashierPage({ user }) {
         }
       };
 
-      // Mulai decode dari kamera
       await codeReader.decodeFromConstraints(constraints, videoRef.current, (result, err) => {
         if (result) {
-          // Barcode terdeteksi
           const barcode = result.getText();
           handleBarcodeScanned(barcode);
-          
-          // Berhenti scan setelah berhasil
           stopScanner();
         }
         if (err && !(err instanceof NotFoundException)) {
           console.error('Scanner error:', err);
-          // Jangan set error untuk NotFoundException karena itu normal
         }
       });
 
@@ -420,8 +562,6 @@ function CashierPage({ user }) {
       setScannerError(error.message);
       setIsScanning(false);
       setShowManualInput(true);
-      
-      // Tampilkan notifikasi error
       showNotification('Gagal membuka kamera: ' + error.message, 'error');
     }
   };
@@ -448,7 +588,6 @@ function CashierPage({ user }) {
     setScannerError(null);
 
     try {
-      // Cek apakah SKU sudah ada di database
       const { data: existingProduct, error: searchError } = await supabase
         .from('products')
         .select('*')
@@ -460,155 +599,23 @@ function CashierPage({ user }) {
       }
 
       if (existingProduct) {
-        // SKU LAMA: Tambahkan ke keranjang
         addToCart(existingProduct);
         showNotification(`✅ ${existingProduct.name} ditambahkan ke keranjang`, 'success');
         setManualInput('');
         setShowManualInput(false);
       } else {
-        // SKU BARU: Buka form tambah produk
+        // Check product limit for freemium
+        if (subscription.plan === 'freemium') {
+          const { count } = await supabase
+            .from('products')
+            .select('*', { count: 'exact', head: true });
+          
+          if (count >= 50) {
+            showNotification('⚠️ Batas produk freemium (50) tercapai. Upgrade ke Premium untuk produk tak terbatas.', 'warning');
+            return;
+          }
+        }
+
         setCurrentProduct(null);
         setNewProduct({
-          sku: barcode,
-          name: '',
-          price: '',
-          stock: '',
-          unit: 'pcs'
-        });
-        setShowProductForm(true);
-        showNotification('📦 SKU baru terdeteksi. Silakan lengkapi data produk.', 'info');
-      }
-    } catch (error) {
-      console.error('Error scanning barcode:', error);
-      setScannerError('Gagal memproses barcode: ' + error.message);
-      showNotification('Error: ' + error.message, 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // ============================================
-  // FUNGSI MANUAL INPUT
-  // ============================================
-  const handleManualSubmit = async (e) => {
-    e.preventDefault();
-    if (!manualInput.trim()) {
-      showNotification('Masukkan SKU atau nama produk', 'warning');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      // Cari produk berdasarkan SKU atau nama
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .or(`sku.ilike.%${manualInput}%,name.ilike.%${manualInput}%`)
-        .limit(1);
-
-      if (error) throw error;
-
-      if (data && data.length > 0) {
-        addToCart(data[0]);
-        showNotification(`✅ ${data[0].name} ditambahkan ke keranjang`, 'success');
-        setManualInput('');
-      } else {
-        // Tidak ditemukan, buka form produk baru
-        setNewProduct({
-          sku: manualInput.toUpperCase(),
-          name: '',
-          price: '',
-          stock: '',
-          unit: 'pcs'
-        });
-        setShowProductForm(true);
-        showNotification('📦 Produk tidak ditemukan. Silakan tambahkan produk baru.', 'info');
-      }
-    } catch (error) {
-      console.error('Error searching product:', error);
-      showNotification('Error: ' + error.message, 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // ============================================
-  // FUNGSI KERANJANG
-  // ============================================
-  const addToCart = (product) => {
-    setCart(prevCart => {
-      const existingItem = prevCart.find(item => item.id === product.id);
-      if (existingItem) {
-        return prevCart.map(item =>
-          item.id === product.id
-            ? { ...item, quantity: item.quantity + 1 }
-            : item
-        );
-      }
-      return [...prevCart, { ...product, quantity: 1 }];
-    });
-  };
-
-  const removeFromCart = (productId) => {
-    setCart(prevCart => prevCart.filter(item => item.id !== productId));
-  };
-
-  const updateQuantity = (productId, change) => {
-    setCart(prevCart =>
-      prevCart.map(item => {
-        if (item.id === productId) {
-          const newQuantity = item.quantity + change;
-          if (newQuantity <= 0) return null;
-          return { ...item, quantity: newQuantity };
-        }
-        return item;
-      }).filter(Boolean)
-    );
-  };
-
-  const getTotal = () => {
-    return cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  };
-
-  // ============================================
-  // FUNGSI TAMBAH PRODUK BARU
-  // ============================================
-  const handleAddNewProduct = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-
-    try {
-      const { data, error } = await supabase
-        .from('products')
-        .insert([{
-          sku: newProduct.sku,
-          name: newProduct.name,
-          price: parseFloat(newProduct.price),
-          stock: parseInt(newProduct.stock) || 0,
-          unit: newProduct.unit,
-          created_by: user.id
-        }])
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      if (data) {
-        // Tambahkan ke keranjang
-        addToCart(data);
-        setShowProductForm(false);
-        setNewProduct({ sku: '', name: '', price: '', stock: '', unit: 'pcs' });
-        showNotification(`✅ Produk ${data.name} berhasil ditambahkan`, 'success');
-      }
-    } catch (error) {
-      console.error('Error adding product:', error);
-      showNotification('Gagal menambahkan produk: ' + error.message, 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // ============================================
-  // FUNGSI TRANSAKSI
-  // ============================================
-  const handleChec
+          sku: barco
