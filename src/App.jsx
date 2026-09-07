@@ -18,7 +18,6 @@ function POSApp() {
     }
   };
 
-  // Fungsi Kurangi atau Hapus Item dari Keranjang (Saran DeepSeek)
   const removeItem = (index) => {
     const newCart = [...cart];
     if (newCart[index].quantity > 1) {
@@ -86,7 +85,6 @@ function POSApp() {
             </button>
           </div>
 
-          {/* Daftar Item di Keranjang dengan Tombol Hapus/Kurang */}
           <div className="bg-white p-4 rounded shadow mb-4">
             <h2 className="font-semibold mb-2 text-sm text-gray-600">Keranjang Belanja:</h2>
             {cart.length === 0 ? (
@@ -155,5 +153,5 @@ function POSApp() {
       )}
     </div>
   );
-}
-  
+                }
+                               
